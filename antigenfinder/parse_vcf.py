@@ -5,7 +5,7 @@ from pysam import VariantRecord
 
 from antigenfinder import utils
 from antigenfinder.prepare_gtf import TranscriptCache
-from snpeff import SnpEffAnn
+from antigenfinder.snpeff import SnpEffAnn
 
 def fix_gt(gt: tuple) -> tuple[str, ...]:
     return tuple("." if item is None else str(item) for item in gt)
