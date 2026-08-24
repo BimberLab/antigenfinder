@@ -1,0 +1,6 @@
+gffutils
+pyfaidx
+pysam
+setuptools
+pandas
+Bio.SeqUtils
