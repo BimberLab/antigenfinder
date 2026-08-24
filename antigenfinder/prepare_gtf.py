@@ -12,7 +12,7 @@ class TranscriptCache:
     def __init__(self, gff_file: str, fasta_file: str, cache_dir: str = None, skip_if_exists: bool = True):
         if cache_dir is not None:
             os.makedirs(cache_dir, exist_ok=True)
-            gff_out_dir = os.path.join(cache_dir, '.gff')
+            gff_out_dir = os.path.join(cache_dir, 'gffdb')
         else:
             gff_out_dir = ':memory:'
 
@@ -69,12 +69,10 @@ class TranscriptCache:
 
 
 def parse_gff(gff_file, database_filename = ':memory:', skip_if_exists=True) :
-    print('Loading the GTF')
-
     if skip_if_exists and database_filename != ':memory:' and os.path.exists(database_filename):
-        print('Cached gffutils folder exists, reusing')
+        print('Cached gffutils DB exists, reusing: {}'.format(database_filename))
     else:
-        print('Creating gffutils DB')
+        print('Creating gffutils DB: {}'.format(database_filename))
         gffutils.create_db(gff_file,
                            database_filename,
                            merge_strategy='create_unique',

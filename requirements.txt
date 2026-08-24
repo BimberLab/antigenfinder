@@ -4,5 +4,4 @@ pysam
 setuptools
 pandas
 Bio
-Bio.SeqUtils
 shutil
