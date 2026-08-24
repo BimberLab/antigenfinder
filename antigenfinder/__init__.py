@@ -27,13 +27,13 @@ if __name__ == "__main__":
     process_vcf_parser = subparsers.add_parser('process_vcf')
     process_vcf_parser.add_argument('--vcf_file', help='The path to the VCF file.', type=str, default=[])
     process_vcf_parser.add_argument('--source_sample', help='The name of the sample to test for neoantigens.', type=str, default=[])
+    process_vcf_parser.add_argument('--aa_flank_window', help='The number of amino acids to report on either side of the variant', type=int, default=10)
+    process_vcf_parser.add_argument('--output_file', help='The path where the output TSV will be written.', type=str, default=[])
 
     process_vcf_parser.add_argument('--gtf_file', help='The path to the GTF file.', type=str, default=[])
     process_vcf_parser.add_argument('--fasta_file', help='The path to the genome FASTA file.', type=str, default=[])
     process_vcf_parser.add_argument('--cache_dir', help='The path where the parsed GTF/FASTA output read or created.', type=str, default=[])
     process_vcf_parser.add_argument('--skip_processing_if_cached', help='An optional flag to skip re-processing. If the GFF DB exists in --cache_dir, it will be re-used, instead of re-processing the GTF, ', type=bool, default=False)
-    process_vcf_parser.add_argument('--aa_flank_window', help='The number of amino acids to report on either side of the SNV', type=int, default=10)
-    process_vcf_parser.add_argument('--output_file', help='The path where the output TSV will be written.', type=str, default=[])
 
     args = parser.parse_args()
 
