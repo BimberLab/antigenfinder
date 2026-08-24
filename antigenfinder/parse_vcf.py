@@ -1,5 +1,5 @@
 import math
-
+import csv
 import pysam
 from pysam import VariantRecord
 
@@ -8,17 +8,78 @@ from snpeff import SnpEffAnn
 
 
 class Hit:
-    def __init__(self, record: VariantRecord, sample_name: str, allele_idx: int):
+    def __init__(self, record: VariantRecord, sample_name: str, allele_idx: int, haplotype_idx: int, tid: str, gene_name: str, aa_positions: list[int]):
         self.sample_name = sample_name
         self.chrom = record.chrom
         self.pos = record.pos
         self.ref = record.ref
         self.allele_idx = allele_idx
+        self.haplotype_idx = haplotype_idx
+        self.tid = tid
+        self.gene_name = gene_name
         self.nt_change = record.alleles[allele_idx]
+        self.aa_positions = aa_positions
+
+        self.wt_region: str|None = None
+        self.seq_region: str|None = None
+        self.region_start1: int|None = None
+        self.region_end1: int|None = None
+
+        self.messages: list[str] = []
+        self.consequences_applied: list[str] = []
+
+
+def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, aa_seq: list[str], tracker: Hit):
+    aa_changes = ann.get_aa_changes(tid)
+    if len(aa_changes) != len(aa_positions1):
+        raise Exception('AA changes not equal to positions: {}, {}, {}'.format(tid, aa_positions1, aa_changes))
+
+    ref_aas = ann.get_ref_aas(tid)
+    if len(ref_aas) != len(aa_positions1):
+        raise Exception('ref_aas not equal to positions: {}, {}, {}'.format(tid, aa_positions1, ref_aas))
+
+    idx = 0
+    for aa_pos1 in aa_positions1:
+        aa_pos0 = aa_pos1 - 1
+        aa_change = aa_changes[idx]
+        expected_ref = ref_aas[idx]
+        idx += 1
+
+        # Example: p.Ter603Glnext*?
+        if aa_pos0 >= len(aa_seq):
+            continue
+            #raise Exception("AA position is longer than AA sequence, aa_pos0: {}, len(aa_seq): {}, TID: {}, aa_cons: {}", aa_pos0, len(aa_seq), tid, ann.get_aa_cons(tid))
+
+        if aa_pos0 >= len(aa_seq):
+            raise Exception("AA index more than seq length: {}".format(aa_pos0))
+
+        # This will occur if there is an indel. Rather than look up the true REF, rely on '.' to indicate the WT allele:
+        if expected_ref == '.':
+            expected_ref = aa_seq[aa_pos0]
+
+        if aa_seq[aa_pos0] != expected_ref:
+            if aa_seq[aa_pos0].islower():
+                tracker.messages.append('Position already edited: AA Pos: {}; Variant POS: {}; Expected REF: {}; Found: {}'.format(aa_pos1, record.pos, expected_ref, aa_seq[aa_pos0]))
+            else:
+                ss = aa_seq[max(1, aa_pos0-5):min(len(aa_seq), aa_pos0+5)]
+                raise Exception('Error: incorrect reference AA! expected_ref: {}, found: {}, aa_pos1: {}, cons: {}, aa_len: {}, {}, tid: {}, ref: {}, alt: {}'.format(expected_ref, aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), len(aa_seq), ss, tid, record.ref, record.alts))
+
+        # This should automatically select the correct REF/ALT, based on how the SnpEffRecord was created:
+        if not aa_change:
+            tracker.messages.append('Unable to calculate AA_change: ref: {}; aa_pos1: {}; cons: {}; ref: {}; alt: {}'.format(aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), record.ref, record.alts))
+            continue
+
+        # Skip synonymous changes:
+        if expected_ref == aa_change:
+            continue
+
+        tracker.consequences_applied.append('NT{}: {}'.format(record.pos, ann.get_aa_cons(tid)))
+        aa_seq[aa_pos0] = aa_change.lower()
+
+    return aa_seq
 
 def process_variant(record: VariantRecord, source_sample: str, record_buffer: dict[int, list[VariantRecord]], transcript_cache: TranscriptCache, window_size_nt: int) -> list[Hit]:
-    annotation = record.info.get('ANN')
-    if not annotation:
+    if not record.info.get('ANN'):
         raise Exception('No ANN value for variant: {}'.format(record))
 
     ret = []
@@ -28,12 +89,12 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
             print(record.samples[source_sample]['GT'])
             print(get_unique_alleles(record, source_sample))
 
-        ann = SnpEffAnn(annotation, record, allele_idx)
+        ann = SnpEffAnn(record, allele_idx)
         tids = ann.get_transcript_ids()
         if not tids:
             continue
 
-        flanking_variants = []
+        flanking_variants: list[VariantRecord] = []
         ps = record.samples[source_sample].get('PS')
         if ps:
             min_nt_pos = record.pos - window_size_nt
@@ -41,73 +102,67 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
             for nt_pos in record_buffer.keys():
                 if min_nt_pos <= nt_pos <= max_nt_pos:
                     for fv in record_buffer[nt_pos]:
-                        if fv.samples[source_sample].get('PS') == ps:
+                        if is_passing(fv) and fv.pos != record.pos and fv.samples[source_sample].get('PS') == ps:
                             flanking_variants.append(fv)
 
         for tid in tids:
             aa_seq = transcript_cache.find_transcript_sequence(tid)
             aa_positions1 = ann.get_aa_positions(tid)
             if not aa_positions1:
-                # TODO: capture this better
-                continue
+                raise Exception('No passing AA positions: tid: {}, pos: {}'.format(tid, record.pos))
 
-            aa_changes = ann.get_aa_changes(tid)
-            if len(aa_changes) != len(aa_positions1):
-                raise Exception('AA changes not equal to positions: {}, {}, {}'.format(tid, aa_positions1, aa_changes))
+            gene_name = ann.get_gene_name(tid)
 
-            ref_aas = ann.get_ref_aas(tid)
-            if len(ref_aas) != len(aa_positions1):
-                raise Exception('ref_aas not equal to positions: {}, {}, {}'.format(tid, aa_positions1, ref_aas))
+            # Determine which haplotypes to process:
+            gts = record.samples[source_sample].get('GT')
+            indices = [i for i, val in enumerate(gts) if val == allele_idx]
+            for haplotype_idx in indices:
+                hit = Hit(
+                    tid = tid,
+                    gene_name = gene_name,
+                    record=record,
+                    sample_name=source_sample,
+                    allele_idx=allele_idx,
+                    aa_positions=aa_positions1,
+                    haplotype_idx = haplotype_idx + 1
+                )
 
-            idx = 0
-            for aa_pos1 in aa_positions1:
-                aa_pos0 = aa_pos1 - 1
                 edited_seq = list(aa_seq.upper())
-                aa_change = aa_changes[idx]
-                expected_ref = ref_aas[idx]
-                idx += 1
+                edited_seq = update_seq(tid, record, ann, aa_positions1, edited_seq, hit)
 
-                # Example: p.Ter603Glnext*?
-                if aa_pos0 >= len(aa_seq):
-                    continue
-                    #raise Exception("AA position is longer than AA sequence, aa_pos0: {}, len(aa_seq): {}, TID: {}, aa_cons: {}", aa_pos0, len(aa_seq), tid, ann.get_aa_cons(tid))
+                for fv in flanking_variants:
+                    # haplotype_index determines whether we are inspecting H1 or H2.
+                    # we need to inspect the GTs at this position, and translate haplotype_index to allele
+                    fgt = fv.samples[source_sample].get('GT')
+                    if fgt is None or None in fgt:
+                        continue
 
-                if aa_pos0 >= len(edited_seq):
-                    raise Exception("AA index more than seq length: {}".format(aa_pos0))
+                    allele_idx = fgt[haplotype_idx]
 
-                if edited_seq[aa_pos0] != expected_ref:
-                    ss = aa_seq[max(1, aa_pos0-5):min(len(aa_seq), aa_pos0+5)]
-                    print('Error: expected_ref: {}, found: {}, aa_pos1: {}, cons: {}, aa_len: {}, {}, tid: {}, ref: {}, alt: {}'.format(expected_ref, edited_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), len(edited_seq), ss, tid, record.ref, record.alts))
-                    #print(edited_seq)
-                    continue
-                    #raise Exception(f'AA position doesnt match expected ref, found: {edited_seq[aa_pos0]} / expected: {expected_ref}')
+                    # WT, nothing to do:
+                    if allele_idx == 0:
+                        continue
 
-                # This should automatically select the correct REF/ALT, based on how the SnpEffRecord was created:
-                if not aa_change:
-                    print('Unable to calculate AA_change: expected_ref: {}, found: {}, aa_pos1: {}, cons: {}, aa_len: {}, tid: {}, cons: {}, ref: {}, alt: {}'.format(expected_ref, edited_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), len(edited_seq), tid, ann.get_aa_cons(tid), record.ref, record.alts))
-                    continue
+                    fa = SnpEffAnn(fv, allele_idx)
+                    faa = fa.get_aa_positions(tid)
+                    if faa:
+                        try:
+                            edited_seq = update_seq(tid, fv, fa, faa, edited_seq, hit)
+                        except Exception as e:
+                            print('ERROR: pos: {}, parent_aa: {}, faa: {}, FV NT: {}'.format(record.pos, aa_positions1, faa, fv.pos))
+                            raise e
 
-                if expected_ref == aa_change:
-                    #print('Synonymous variant, skipping')
-                    continue
+                # Use one less than the window size, to ensure this position is contained in the window
+                window_size_aa = int(window_size_nt / 3)
+                region_start1 = max(1, min(aa_positions1) - window_size_aa)
+                region_end1 = min(len(aa_seq), min(aa_positions1)-1 + window_size_aa)
 
-                edited_seq[aa_pos0] = aa_change.lower()
+                hit.region_start1 = region_start1
+                hit.region_end1 = region_end1
+                hit.seq_region = ''.join(edited_seq[region_start1-1:region_end1])
+                hit.wt_region = aa_seq[region_start1-1:region_end1]
 
-            for fv in flanking_variants:
-                # TODO
-                allele_idx = ann.allele_idx
-
-
-
-
-            # Use one less than the window size, to ensure this position is contained in the window
-            # window_size_aa = int(window_size_nt / 3)
-            # region_start1 = max(1, aa_pos1 - window_size_aa)
-            # region_end1 = min(len(aa_seq), aa_pos0 + window_size_aa)
-            # orig_seq = aa_seq[region_start1-1:region_end1]
-
-            ret.append(Hit(record, sample_name=source_sample, allele_idx=allele_idx))
-
+                ret.append(hit)
     return ret
 
 def process_variant_queue(variants_to_process: list[VariantRecord], source_sample: str, collected_hits: list[Hit], record_map: dict[int, list[VariantRecord]], max_position_to_process: float, transcript_cache: TranscriptCache, window_size_nt: int):
@@ -150,7 +205,7 @@ def get_unique_alleles(record, source_sample):
     return set(gts)
 
 
-def process_vcf(vcf_file: str, source_sample: str, transcript_cache: TranscriptCache, aa_flank_window: int = 10):
+def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_cache: TranscriptCache, aa_flank_window: int = 10, max_records_to_process = -1) -> list[Hit]:
     print('Iterating variants')
     with pysam.VariantFile(vcf_file) as vcf_in:
         samples = list(vcf_in.header.samples)
@@ -203,12 +258,36 @@ def process_vcf(vcf_file: str, source_sample: str, transcript_cache: TranscriptC
             min_position = min(map(lambda x: x.pos, variants_to_process)) - buffer_window if variants_to_process else record.pos - buffer_window
             record_map = {k: v for k, v in record_map.items() if k >= min_position}
 
-            if n_processed == 500000:
+            if n_processed == max_records_to_process:
                 break
 
         # Process anything left in the queue:
         process_variant_queue(variants_to_process, source_sample, collected_hits, record_map, math.inf, transcript_cache, window_size_nt=nt_flank_window)
 
         print(f'Total hits: {len(collected_hits)}')
+
+        if output_file:
+            with open(output_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f, delimiter='\t')
+                writer.writerow(['SampleName', 'TranscriptId', 'GeneName', 'Chrom', 'NT_Pos', 'NT_Change', 'ImmunogenicAllele', 'HaplotypeNumber', 'AA_Pos', 'RegionStart', 'RegionEnd', 'AA_Seq', 'WT-Region', 'RegionsSame', 'AA_Changes', 'Messages'])
+                for hit in collected_hits:
+                    writer.writerow([
+                        hit.sample_name,
+                        hit.tid,
+                        hit.gene_name,
+                        hit.chrom,
+                        hit.pos,
+                        hit.ref + '>' + hit.nt_change,
+                        'Wild-Type' if hit.allele_idx == 0 else 'Variant',
+                        hit.haplotype_idx,
+                        ';'.join(str(num) for num in hit.aa_positions),
+                        hit.region_start1,
+                        hit.region_end1,
+                        hit.seq_region,
+                        hit.wt_region,
+                        str(hit.seq_region == hit.wt_region),
+                        ';'.join(hit.consequences_applied),
+                        ';'.join(hit.messages)
+                    ])
         return collected_hits
 

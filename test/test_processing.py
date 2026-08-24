@@ -34,7 +34,9 @@ class TestDataProcessing(unittest.TestCase):
             print('Making VCF index')
             pysam.tabix_index(vcf, preset="vcf", force=True)
 
-        results = process_vcf(vcf_file=vcf, source_sample='SHIELD_002_Recipient', transcript_cache=tc)
+        out_file = '/mnt/c/Users/Bimber/Downloads/SHIELD_VCF/SHIELD.802761.output.txt'
+        results = process_vcf(vcf_file=vcf, source_sample='SHIELD_002_Recipient', transcript_cache=tc, max_records_to_process=250000, output_file=out_file)
+        self.assertEqual(len(results), 5486, 'Incorrect number of results')
 
 
 if __name__ == "__main__":

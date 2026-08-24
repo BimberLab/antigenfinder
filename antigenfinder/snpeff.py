@@ -13,11 +13,13 @@ def is_integer(s):
 
 
 # Converts SnpEff's 3-digit code to one letter:
-def convert_aa(aa):
+def convert_codon(aa):
     if aa == '*':
         return aa
     elif aa == 'Ter':
         return '*'
+    elif aa == 'ext':
+        return '?'
     elif aa == 'del':
         return '-'
     elif aa == 'Ins':
@@ -28,15 +30,42 @@ def convert_aa(aa):
     return seq1(aa)
 
 
-class AaConsequence:
-    ref = None
-    pos = None
-    alt = None
+def convert_aa(aa):
+    output = []
+    while aa:
+        if aa.startswith('fs'):
+            output.append('~')
+            aa = aa[2:]
+        elif aa.startswith('ins'):
+            # I think we can just ignore this...
+            aa = aa[3:]
+        elif aa.startswith('*'):
+            # I think we can just ignore this...
+            aa = aa[1:]
+        elif aa.startswith('?'):
+            # This indicates unknown ending, like a frameshift
+            aa = aa[1:]
+        else:
+            codon = aa[:3]
+            output.append(convert_codon(codon))
+            aa = aa[3:]
 
-def parse_compound_consequence(match: re.Match) -> list[AaConsequence]:
+    return ''.join(output)
+
+class AaConsequence:
+    def __init__(self):
+        self.ref = None
+        self.pos = None
+        self.alt = None
+
+def parse_compound_consequence(match: re.Match, raw_cons: str) -> list[AaConsequence]:
+    positions = []
+
     ref1 = match.group(1)
     pos_start = int(match.group(2))
     ref2 = match.group(3)
+    if len(ref2) != 3:
+        print('Unexpected ref2: {}, {}'.format(ref1, raw_cons))
     pos_end = int(match.group(4))
     alt = match.group(5)
 
@@ -44,17 +73,23 @@ def parse_compound_consequence(match: re.Match) -> list[AaConsequence]:
     cons.ref = convert_aa(ref1)
     cons.pos = pos_start
     cons.alt = convert_aa(alt)
+    positions.append(cons)
 
-    cons2 = AaConsequence()
-    cons2.ref2 = convert_aa(ref2)
-    cons2.pos = pos_end
-    cons2.alt = convert_aa(alt)
+    # NOTE: leave ALT blank, since we will attribute the entire change to the first position
+    current_pos = pos_start + 1
+    while current_pos <= pos_end:
+        cons_new = AaConsequence()
+        cons_new.ref = convert_aa(ref2) if current_pos == pos_end else '.'
+        cons_new.pos = current_pos
+        cons_new.alt = '-'
+        positions.append(cons_new)
+        current_pos += 1
 
-    # TODO: infer the middle alleles:
-    if pos_end - pos_start > 1:
-        print('Indel > 2 AA!!!')
+    expected_length = pos_end - pos_start + 1
+    if len(positions) != expected_length:
+        print('Incorrect complex consequence output: {}, {}'.format(expected_length, len(positions)))
 
-    return [cons, cons2]
+    return positions
 
 def parse_simple_consequence(match: re.Match) -> list[AaConsequence]:
     ref = match.group(1)
@@ -71,13 +106,13 @@ def parse_simple_consequence(match: re.Match) -> list[AaConsequence]:
 def parse_consequence(val: str) -> list[AaConsequence]:
     val = re.sub(r'^p\.', '', val)
 
-    match_simple = re.search(r'^([a-zA-Z\\*]+)([0-9]+)([a-zA-Z\\*]+)$', val)
+    match_simple = re.search(r'^([a-zA-Z?\\*]+)([0-9]+)([a-zA-Z?\\*]+)$', val)
     if match_simple:
         return parse_simple_consequence(match_simple)
 
-    match_complex = re.search(r'^([a-zA-Z\\*]+)([0-9]+)_([a-zA-Z\\*]+)([0-9]+)([a-zA-Z\\*]+)([\\?]{0,1})$', val)
+    match_complex = re.search(r'^([a-zA-Z?\\*]+)([0-9]+)_([a-zA-Z?\\*]+)([0-9]+)([a-zA-Z?\\*]+)([\\?]{0,1})$', val)
     if match_complex:
-        return parse_compound_consequence(match_complex)
+        return parse_compound_consequence(match_complex, val)
 
     print('No match: {}'.format(val))
 
@@ -85,14 +120,6 @@ def parse_consequence(val: str) -> list[AaConsequence]:
 
 
 class SnpEffRecord:
-    aa_positions: list[int] = None
-    aa_ref: list[str] = None
-    aa_alt: list[str] = None
-
-    nt_pos: int = None
-    nt_ref: str = None
-    nt_alt: str = None
-
     def __init__(self, raw_ann: str, variant: VariantRecord):
         self.variant = variant
         tokens = raw_ann.split('|')
@@ -104,6 +131,15 @@ class SnpEffRecord:
         self.transcript_id = tokens[6]
         self.nt_consequence = tokens[9]
         self.aa_consequence = tokens[10]
+
+        self.aa_positions: list[int] = []
+        self.aa_ref: list[str] = []
+        self.aa_alt: list[str] = []
+
+        self.nt_pos: int|None = None
+        self.nt_ref: str|None = None
+        self.nt_alt: str|None = None
+
 
     def parse_aa_consequence(self):
         if not self.aa_consequence:
@@ -157,13 +193,13 @@ def make_unique(list_of_lists):
 
 
 class SnpEffAnn:
-    def __init__(self, ann, record: VariantRecord, allele_idx: int):
+    def __init__(self, record: VariantRecord, allele_idx: int):
         self.allele_idx = allele_idx
         self.allele = record.alleles[allele_idx]
 
         self.annotations = {}
         self.alleles = record.alleles
-        for raw_ann in ann:
+        for raw_ann in record.info.get('ANN'):
             x = SnpEffRecord(raw_ann, record)
             if not x.allele in self.annotations.keys():
                 self.annotations[x.allele] = []
@@ -197,16 +233,27 @@ class SnpEffAnn:
 
         return tids
 
-    def get_aa_cons(self, tid: str):
+    def get_aa_cons(self, tid: str|None):
         ret = []
         for ann in self.get_annotations(tid):
             ret.append(ann.aa_consequence)
 
         return ','.join(ret)
 
+    def get_gene_name(self, tid: str):
+        ret = []
+
+        for ann in self.get_annotations(tid):
+            ret.append(ann.gene)
+
+        ret = list(set(ret))
+
+        return ','.join(ret)
+
     def get_aa_positions(self, tid: str) -> list[int]:
         ret = []
-        for ann in self.get_annotations(tid):
+        anns = self.get_annotations(tid)
+        for ann in anns:
             aa = ann.get_aa_positions()
             if aa:
                 ret.append(aa)
@@ -216,10 +263,10 @@ class SnpEffAnn:
 
         ret = make_unique(ret)
         if len(ret) == 0:
-            print('No AA positions found: {}, {}'.format(tid, ret))
+            # Only report this if there are annotations for this transcript:
             return []
         elif len(ret) > 1:
-            print('Multiple AA positions found: {}, {}'.format(tid, ret))
+            print('Multiple AA positions found: {}, {}, {}, {}'.format(tid, ret, self.get_aa_cons(tid), self.get_aa_cons(None)))
 
         return ret[0]
 

@@ -53,8 +53,10 @@ class TranscriptCache:
                 offset = int(offset)
                 nt_seq = nt_seq[offset:]
 
-            #if len(nt_seq) % 3 != 0:
-            #    print('WARNING: NT sequence not even number of codons: {}, NT length: {}, AA: {}'.format(tid, len(nt_seq), len(nt_seq)/3))
+            # NOTE: biopython complains if the input length isnt divisible by three
+            if len(nt_seq) % 3 != 0:
+                to_add = 3 - (len(nt_seq) % 3)
+                nt_seq = nt_seq + ('N' * to_add)
 
             aa_seq = nt_seq.translate()
 
