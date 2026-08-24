@@ -135,3 +135,5 @@ aligner
 
 # Intellij
 .idea/*
+
+test/data/local_cache*

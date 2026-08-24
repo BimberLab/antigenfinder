@@ -73,7 +73,7 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
         if expected_ref == aa_change:
             continue
 
-        tracker.consequences_applied.append('NT{}: {}'.format(record.pos, ann.get_aa_cons(tid)))
+        tracker.consequences_applied.append('NT-{}: {}'.format(record.pos, ann.get_aa_cons(tid)))
         aa_seq[aa_pos0] = aa_change.lower()
 
     return aa_seq
@@ -285,7 +285,7 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
                         hit.region_end1,
                         hit.seq_region,
                         hit.wt_region,
-                        str(hit.seq_region == hit.wt_region),
+                        'REVIEW' if hit.allele_idx > 0 and hit.seq_region == hit.wt_region else '',
                         ';'.join(hit.consequences_applied),
                         ';'.join(hit.messages)
                     ])
