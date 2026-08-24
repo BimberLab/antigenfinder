@@ -9,7 +9,7 @@ import urllib.request
 import pysam
 
 from antigenfinder.prepare_gtf import TranscriptCache
-from parse_vcf import process_vcf
+from antigenfinder.parse_vcf import process_vcf
 
 
 def get_local_cache():
