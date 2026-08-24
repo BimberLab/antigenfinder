@@ -208,16 +208,21 @@ def get_unique_alleles(record, source_sample):
     if not gts:
         return []
 
+    total_passing = 0
     for sample in record.samples:
         if sample == source_sample:
             continue
 
-        if not record.samples[sample]['GT']:
+        if record.samples[sample]['GT'] is None or any(g is None for g in record.samples[sample]['GT']):
             continue
 
+        total_passing += 1
         for gt in list(record.samples[sample]['GT']):
             if gt in gts:
                 gts = [x for x in gts if x != gt]
+
+    if not total_passing:
+        return []
 
     return set(gts)
 

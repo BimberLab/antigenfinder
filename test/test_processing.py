@@ -1,15 +1,16 @@
+import gzip
 import os
-import unittest
-import tempfile
-import urllib.request
 import pathlib
+import shutil
+import tempfile
+import unittest
+import urllib.request
+
 import pysam
 
-import utils
 from antigenfinder.prepare_gtf import TranscriptCache
 from parse_vcf import process_vcf
-import gzip
-import shutil
+
 
 def get_local_cache():
     data_dir = pathlib.Path(__file__).parent / "data"
@@ -68,7 +69,7 @@ class TestDataProcessing(unittest.TestCase):
 
         out_file = 'antigenfinder.output.txt'
         results = process_vcf(vcf_file=vcf, source_sample='Sample1', transcript_cache=tc, output_file=out_file)
-        self.assertEqual(len(results), 884, 'Incorrect number of results')
+        self.assertEqual(len(results), 869, 'Incorrect number of results')
 
 if __name__ == "__main__":
     unittest.main()
