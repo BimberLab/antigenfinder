@@ -3,7 +3,7 @@ import csv
 import pysam
 from pysam import VariantRecord
 
-import utils
+from antigenfinder import utils
 from antigenfinder.prepare_gtf import TranscriptCache
 from snpeff import SnpEffAnn
 
