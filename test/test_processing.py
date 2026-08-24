@@ -68,7 +68,7 @@ class TestDataProcessing(unittest.TestCase):
 
         out_file = 'antigenfinder.output.txt'
         results = process_vcf(vcf_file=vcf, source_sample='Sample1', transcript_cache=tc, output_file=out_file)
-        self.assertEqual(len(results), 1328, 'Incorrect number of results')
+        self.assertEqual(len(results), 884, 'Incorrect number of results')
 
 if __name__ == "__main__":
     unittest.main()

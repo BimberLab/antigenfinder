@@ -49,7 +49,7 @@ class TranscriptCache:
 
             #NOTE: the score column denotes a transcript that starts out of frame. this matters for the first codon:
             offset = cds_features[0].frame
-            if offset and offset != '.':
+            if offset:
                 offset = int(offset)
                 nt_seq = nt_seq[offset:]
 

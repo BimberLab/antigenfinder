@@ -4,4 +4,3 @@ pysam
 setuptools
 pandas
 Bio
-shutil

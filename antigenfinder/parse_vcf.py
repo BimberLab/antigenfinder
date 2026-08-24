@@ -67,6 +67,10 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
         if expected_ref == '.':
             expected_ref = aa_seq[aa_pos0]
 
+        # Same idea as above
+        if ann.allele_idx == 0 and aa_change == '.':
+            aa_change = aa_seq[aa_pos0]
+
         if aa_seq[aa_pos0] != expected_ref:
             if aa_seq[aa_pos0].islower():
                 tracker.messages.append('Position already edited: AA Pos: {}; Variant POS: {}; Expected REF: {}; Found: {}'.format(aa_pos1, record.pos, expected_ref, aa_seq[aa_pos0]))
@@ -213,7 +217,7 @@ def get_unique_alleles(record, source_sample):
 
         for gt in list(record.samples[sample]['GT']):
             if gt in gts:
-                gts.remove(gt)
+                gts = [x for x in gts if x != gt]
 
     return set(gts)
 
