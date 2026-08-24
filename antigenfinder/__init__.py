@@ -1,6 +1,8 @@
 import argparse
 from importlib.metadata import version as get_version
 
+import argcomplete
+
 from antigenfinder.parse_vcf import iterate_variants
 from antigenfinder.prepare_gtf import TranscriptCache
 
@@ -19,6 +21,7 @@ if __name__ == "__main__":
     prepare_gtf_parser.add_argument('--gtf_file', help='The path to the GTF file.', type=str, default=[])
     prepare_gtf_parser.add_argument('--fasta_file', help='The path to the genome FASTA file.', type=str, default=[])
     prepare_gtf_parser.add_argument('--cache_dir', help='The path where the output will be created.', type=str, default=[])
+    prepare_gtf_parser.add_argument('--debug_output', help='If provided, all inferred AA sequences will be written to this FASTA file. This can help troubleshoot processing of a GTF.', type=str, default=[])
 
     process_vcf_parser = subparsers.add_parser('process_vcf')
     process_vcf_parser.add_argument('--vcf_file', help='The path to the VCF file.', type=str, default=[])
@@ -33,7 +36,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.subcommand == 'prepare_gtf':
-        TranscriptCache(gff_file = args.gtf_file, fasta_file = args.fasta_file, cache_dir = args.cache_dir, skip_if_exists = False)
+        tc = TranscriptCache(gff_file = args.gtf_file, fasta_file = args.fasta_file, cache_dir = args.cache_dir, skip_if_exists = False)
+
+        if args.debug_output:
+            print('Writing FASTA with all inferred AA sequences to {}'.format(args.debug_output))
+            with open(args.output_file, mode='w') as out:
+                total = 0
+                for transcript in tc.gffdb.features_of_type('transcript'):
+                    out.write(transcript.id + '\n')
+                    aa = tc.find_transcript_sequence(transcript.id)
+                    out.write(aa + '\n')
+                    total += 1
+
+                print('Total written: {}'.format(total))
+
     elif args.subcommand == 'process_vcf':
         tc = TranscriptCache(gff_file = args.gtf_file, fasta_file = args.fasta_file, cache_dir = args.cache_dir, skip_if_exists = False)
         results = iterate_variants(vcf_file = args.vcf_file, sample_name = args.sample_name, transcript_cache = tc, flank_window = args.flank_window)

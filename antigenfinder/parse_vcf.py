@@ -3,22 +3,31 @@ import csv
 import pysam
 from pysam import VariantRecord
 
+import utils
 from antigenfinder.prepare_gtf import TranscriptCache
 from snpeff import SnpEffAnn
 
+def fix_gt(gt: tuple) -> tuple[str, ...]:
+    return tuple("." if item is None else str(item) for item in gt)
 
 class Hit:
-    def __init__(self, record: VariantRecord, sample_name: str, allele_idx: int, haplotype_idx: int, tid: str, gene_name: str, aa_positions: list[int]):
+    def __init__(self, record: VariantRecord, sample_name: str, allele_idx: int, haplotype_idx: int, tid: str, aa_length: int, gene_name: str, aa_positions: list[int]):
         self.sample_name = sample_name
         self.chrom = record.chrom
         self.pos = record.pos
         self.ref = record.ref
+        self.alt = ';'.join([str(item) for item in record.alts])
         self.allele_idx = allele_idx
         self.haplotype_idx = haplotype_idx
         self.tid = tid
         self.gene_name = gene_name
-        self.nt_change = record.alleles[allele_idx]
+        self.aa_length = aa_length
+        self.immunogenic_allele = record.alleles[allele_idx]
         self.aa_positions = aa_positions
+        self.sample_gt = '/'.join(fix_gt(record.samples[self.sample_name].alleles))
+
+        other_sample_names = [val for val in record.samples.keys() if val != sample_name]
+        self.other_gts = ';'.join(map(lambda x: '/'.join(fix_gt(record.samples[x].alleles)), other_sample_names))
 
         self.wt_region: str|None = None
         self.seq_region: str|None = None
@@ -27,7 +36,6 @@ class Hit:
 
         self.messages: list[str] = []
         self.consequences_applied: list[str] = []
-
 
 def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, aa_seq: list[str], tracker: Hit):
     aa_changes = ann.get_aa_changes(tid)
@@ -39,6 +47,8 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
         raise Exception('ref_aas not equal to positions: {}, {}, {}'.format(tid, aa_positions1, ref_aas))
 
     idx = 0
+    orig_messages = len(tracker.messages)
+    orig_consequences = len(tracker.consequences_applied)
     for aa_pos1 in aa_positions1:
         aa_pos0 = aa_pos1 - 1
         aa_change = aa_changes[idx]
@@ -76,7 +86,7 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
         tracker.consequences_applied.append('NT-{}: {}'.format(record.pos, ann.get_aa_cons(tid)))
         aa_seq[aa_pos0] = aa_change.lower()
 
-    return aa_seq
+    return orig_consequences != len(tracker.consequences_applied) or orig_messages != len(tracker.messages)
 
 def process_variant(record: VariantRecord, source_sample: str, record_buffer: dict[int, list[VariantRecord]], transcript_cache: TranscriptCache, window_size_nt: int) -> list[Hit]:
     if not record.info.get('ANN'):
@@ -120,6 +130,7 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                 hit = Hit(
                     tid = tid,
                     gene_name = gene_name,
+                    aa_length = len(aa_seq),
                     record=record,
                     sample_name=source_sample,
                     allele_idx=allele_idx,
@@ -128,7 +139,9 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                 )
 
                 edited_seq = list(aa_seq.upper())
-                edited_seq = update_seq(tid, record, ann, aa_positions1, edited_seq, hit)
+                changes_made = update_seq(tid, record, ann, aa_positions1, edited_seq, hit)
+                if not changes_made:
+                    continue
 
                 for fv in flanking_variants:
                     # haplotype_index determines whether we are inspecting H1 or H2.
@@ -147,7 +160,7 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                     faa = fa.get_aa_positions(tid)
                     if faa:
                         try:
-                            edited_seq = update_seq(tid, fv, fa, faa, edited_seq, hit)
+                            update_seq(tid, fv, fa, faa, edited_seq, hit)
                         except Exception as e:
                             print('ERROR: pos: {}, parent_aa: {}, faa: {}, FV NT: {}'.format(record.pos, aa_positions1, faa, fv.pos))
                             raise e
@@ -269,15 +282,19 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
         if output_file:
             with open(output_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f, delimiter='\t')
-                writer.writerow(['SampleName', 'TranscriptId', 'GeneName', 'Chrom', 'NT_Pos', 'NT_Change', 'ImmunogenicAllele', 'HaplotypeNumber', 'AA_Pos', 'RegionStart', 'RegionEnd', 'AA_Seq', 'WT-Region', 'RegionsSame', 'AA_Changes', 'Messages'])
+                writer.writerow(['SampleName', 'TranscriptId', 'GeneName', 'AA_Length', 'Chrom', 'NT_Pos', 'NT_Change', 'Sample_GT', 'Other_GTs', 'ImmunogenicAllele', 'Category', 'HaplotypeNumber', 'AA_Pos', 'RegionStart', 'RegionEnd', 'AA_Seq', 'WT-Region', 'AA_Changes', 'NT_Translation', 'Warnings', 'Messages'])
                 for hit in collected_hits:
                     writer.writerow([
                         hit.sample_name,
                         hit.tid,
                         hit.gene_name,
+                        hit.aa_length,
                         hit.chrom,
                         hit.pos,
-                        hit.ref + '>' + hit.nt_change,
+                        hit.ref + '>' + hit.alt,
+                        hit.sample_gt,
+                        hit.other_gts,
+                        hit.immunogenic_allele,
                         'Wild-Type' if hit.allele_idx == 0 else 'Variant',
                         hit.haplotype_idx,
                         ';'.join(str(num) for num in hit.aa_positions),
@@ -285,9 +302,10 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
                         hit.region_end1,
                         hit.seq_region,
                         hit.wt_region,
+                        ';'.join(set(hit.consequences_applied)),
+                        utils.aa_to_nt(hit.seq_region),
                         'REVIEW' if hit.allele_idx > 0 and hit.seq_region == hit.wt_region else '',
-                        ';'.join(hit.consequences_applied),
-                        ';'.join(hit.messages)
+                        ';'.join(set(hit.messages))
                     ])
         return collected_hits
 
