@@ -1,18 +1,18 @@
 import unittest
 
-import snpeff
+import antigenfinder.snpeff
 
 
 class TestSnpEffParsing(unittest.TestCase):
     def test_parsing(self):
 
-        x = snpeff.parse_consequence('p.Ser81Ser')
+        x = antigenfinder.snpeff.parse_consequence('p.Ser81Ser')
         self.assertEqual(1, len(x))
         self.assertEqual(x[0].pos, 81)
         self.assertEqual(x[0].ref, 'S')
         self.assertEqual(x[0].alt, 'S')
 
-        x = snpeff.parse_consequence('p.Pro491_Gly492del')
+        x = antigenfinder.snpeff.parse_consequence('p.Pro491_Gly492del')
         self.assertEqual(2, len(x))
         self.assertEqual(x[0].pos, 491)
         self.assertEqual(x[0].ref, 'P')
@@ -22,7 +22,7 @@ class TestSnpEffParsing(unittest.TestCase):
         self.assertEqual(x[1].ref, 'G')
         self.assertEqual(x[1].alt, '-')
 
-        x = snpeff.parse_consequence('p.Asp1711_Asp1712del')
+        x = antigenfinder.snpeff.parse_consequence('p.Asp1711_Asp1712del')
         self.assertEqual(2, len(x), 'p.Asp1711_Asp1712del')
         self.assertEqual(x[0].pos, 1711, 'p.Asp1711_Asp1712del')
         self.assertEqual(x[0].ref, 'D', 'p.Asp1711_Asp1712del')
@@ -33,7 +33,7 @@ class TestSnpEffParsing(unittest.TestCase):
         self.assertEqual(x[1].alt, '-', 'p.Asp1711_Asp1712del')
 
         # TODO: see NTs!
-        x = snpeff.parse_consequence('p.Cys48_Gly49insCysSerSerGlyGlyCys')
+        x = antigenfinder.snpeff.parse_consequence('p.Cys48_Gly49insCysSerSerGlyGlyCys')
         self.assertEqual(2, len(x))
         self.assertEqual(x[0].pos, 48)
         self.assertEqual(x[0].ref, 'C')
@@ -43,7 +43,7 @@ class TestSnpEffParsing(unittest.TestCase):
         self.assertEqual(x[1].ref, 'G')
         self.assertEqual(x[1].alt, '-')
 
-        x = snpeff.parse_consequence('p.Trp8_His9delinsCys')
+        x = antigenfinder.snpeff.parse_consequence('p.Trp8_His9delinsCys')
         self.assertEqual(2, len(x))
         self.assertEqual(x[0].pos, 8)
         self.assertEqual(x[0].ref, 'W')

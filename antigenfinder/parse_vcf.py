@@ -47,7 +47,7 @@ class Hit:
         self.messages: list[str] = []
         self.consequences_applied: list[str] = []
 
-def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, aa_seq: list[str], tracker: Hit, stats_collector: StatsCollector|None):
+def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, aa_seq: list[str], tracker: Hit, stats_collector: StatsCollector|None, edited_positions: list[int] = None):
     aa_changes = ann.get_aa_changes(tid)
     if len(aa_changes) != len(aa_positions1):
         raise Exception('AA changes not equal to positions: {}, {}, {}'.format(tid, aa_positions1, aa_changes))
@@ -83,6 +83,10 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
 
         if aa_seq[aa_pos0] != expected_ref:
             if aa_seq[aa_pos0].islower():
+                if edited_positions is not None and aa_pos1 in edited_positions:
+                    tracker.messages.append('Position was previously edited by adjacent variant. Translation may be incorrect. ref: {}; aa_pos1: {}; cons: {}; ref: {}; alt: {}'.format(aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), record.ref, record.alts))
+                    continue
+
                 tracker.messages.append('Position already edited: AA Pos: {}; Variant POS: {}; Expected REF: {}; Found: {}'.format(aa_pos1, record.pos, expected_ref, aa_seq[aa_pos0]))
             else:
                 ss = aa_seq[max(1, aa_pos0-5):min(len(aa_seq), aa_pos0+5)]
@@ -180,9 +184,10 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                     faa = fa.get_aa_positions(tid)
                     if faa:
                         try:
-                            update_seq(tid, fv, fa, faa, edited_seq, hit, None)
+                            update_seq(tid, fv, fa, faa, edited_seq, hit, None, edited_positions = aa_positions1)
                         except Exception as e:
-                            print('ERROR: pos: {}, parent_aa: {}, faa: {}, FV NT: {}'.format(record.pos, aa_positions1, faa, fv.pos))
+                            print('Error updating flanking sequence: pos: {}, parent_aa: {}, faa: {}, FV NT: {}'.format(record.pos, aa_positions1, faa, fv.pos))
+                            print(repr(e))
                             raise e
 
                 # Use one less than the window size, to ensure this position is contained in the window
@@ -248,7 +253,7 @@ def get_unique_alleles(record, source_sample):
 
     return set(gts)
 
-def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_cache: TranscriptCache, aa_flank_window: int = 10, max_records_to_process = -1) -> list[Hit]:
+def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_cache: TranscriptCache, aa_flank_window: int = 10, max_records_to_process = -1) -> StatsCollector:
     print('Iterating variants')
     with pysam.VariantFile(vcf_file) as vcf_in:
         samples = list(vcf_in.header.samples)
@@ -347,5 +352,4 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
         print('# Unique transcripts: {}'.format(len(stats_collector.unique_transcripts)))
         print('# Unique genes: {}'.format(len(stats_collector.unique_gene_names)))
 
-        return collected_hits
-
+        return stats_collector
