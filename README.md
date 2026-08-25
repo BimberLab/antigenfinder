@@ -1,6 +1,6 @@
 # antigenfinder
 
-[![Run Tests](https://github.com/BimberLab/antigenfinder/actions/workflows/ci.yml/badge.svg)](https://github.com/BimberLab/antigenfinder/actions/workflows/ci.yml)
+[![Run Tests](https://github.com/BimberLab/antigenfinder/actions/workflows/tests.yml/badge.svg)](https://github.com/BimberLab/antigenfinder/actions/workflows/tests.yml)
 
 ## Overview
 
