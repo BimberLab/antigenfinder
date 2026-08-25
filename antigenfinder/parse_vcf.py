@@ -182,7 +182,8 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                         try:
                             update_seq(tid, fv, fa, faa, edited_seq, hit, None)
                         except Exception as e:
-                            print('ERROR: pos: {}, parent_aa: {}, faa: {}, FV NT: {}'.format(record.pos, aa_positions1, faa, fv.pos))
+                            print('Error updating flanking sequence: pos: {}, parent_aa: {}, faa: {}, FV NT: {}'.format(record.pos, aa_positions1, faa, fv.pos))
+                            print(repr(e))
                             raise e
 
                 # Use one less than the window size, to ensure this position is contained in the window
@@ -248,7 +249,7 @@ def get_unique_alleles(record, source_sample):
 
     return set(gts)
 
-def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_cache: TranscriptCache, aa_flank_window: int = 10, max_records_to_process = -1) -> list[Hit]:
+def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_cache: TranscriptCache, aa_flank_window: int = 10, max_records_to_process = -1) -> StatsCollector:
     print('Iterating variants')
     with pysam.VariantFile(vcf_file) as vcf_in:
         samples = list(vcf_in.header.samples)
@@ -347,5 +348,4 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
         print('# Unique transcripts: {}'.format(len(stats_collector.unique_transcripts)))
         print('# Unique genes: {}'.format(len(stats_collector.unique_gene_names)))
 
-        return collected_hits
-
+        return stats_collector
