@@ -83,11 +83,12 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
 
         if aa_seq[aa_pos0] != expected_ref:
             if aa_seq[aa_pos0].islower():
-                if edited_positions is not None and aa_pos1 in edited_positions:
-                    tracker.messages.append('Position was previously edited by adjacent variant. Translation may be incorrect. ref: {}; aa_pos1: {}; cons: {}; ref: {}; alt: {}'.format(aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), record.ref, record.alts))
-                    continue
-
                 tracker.messages.append('Position already edited: AA Pos: {}; Variant POS: {}; Expected REF: {}; Found: {}'.format(aa_pos1, record.pos, expected_ref, aa_seq[aa_pos0]))
+                continue
+            # NOTE: special chacters, like - indicate an edit, but are not lowercase
+            elif edited_positions is not None and aa_pos1 in edited_positions:
+                tracker.messages.append('Position already edited: AA Pos: {}; Variant POS: {}; Expected REF: {}; Found: {}'.format(aa_pos1, record.pos, expected_ref, aa_seq[aa_pos0]))
+                continue
             else:
                 ss = aa_seq[max(1, aa_pos0-5):min(len(aa_seq), aa_pos0+5)]
                 raise Exception('Error: incorrect reference AA! expected_ref: {}, found: {}, aa_pos1: {}, cons: {}, aa_len: {}, {}, tid: {}, ref: {}, alt: {}'.format(expected_ref, aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), len(aa_seq), ss, tid, record.ref, record.alts))
