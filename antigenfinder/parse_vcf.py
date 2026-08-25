@@ -1,5 +1,6 @@
-import math
 import csv
+import math
+
 import pysam
 from pysam import VariantRecord
 
@@ -7,8 +8,17 @@ from antigenfinder import utils
 from antigenfinder.prepare_gtf import TranscriptCache
 from antigenfinder.snpeff import SnpEffAnn
 
+
 def fix_gt(gt: tuple) -> tuple[str, ...]:
     return tuple("." if item is None else str(item) for item in gt)
+
+class StatsCollector():
+    total_sites_inspected: int = 0
+    total_discordant_sites: int = 0
+    total_protein_altering: int = 0
+    total_synonymous_changes: int = 0
+    unique_transcripts: set[str] = set()
+    unique_gene_names: set[str] = set()
 
 class Hit:
     def __init__(self, record: VariantRecord, sample_name: str, allele_idx: int, haplotype_idx: int, tid: str, aa_length: int, gene_name: str, aa_positions: list[int]):
@@ -37,7 +47,7 @@ class Hit:
         self.messages: list[str] = []
         self.consequences_applied: list[str] = []
 
-def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, aa_seq: list[str], tracker: Hit):
+def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, aa_seq: list[str], tracker: Hit, stats_collector: StatsCollector|None):
     aa_changes = ann.get_aa_changes(tid)
     if len(aa_changes) != len(aa_positions1):
         raise Exception('AA changes not equal to positions: {}, {}, {}'.format(tid, aa_positions1, aa_changes))
@@ -85,6 +95,8 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
 
         # Skip synonymous changes:
         if expected_ref == aa_change:
+            if stats_collector:
+                stats_collector.total_synonymous_changes += 1
             continue
 
         tracker.consequences_applied.append('NT-{}: {}'.format(record.pos, ann.get_aa_cons(tid)))
@@ -92,7 +104,7 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
 
     return orig_consequences != len(tracker.consequences_applied) or orig_messages != len(tracker.messages)
 
-def process_variant(record: VariantRecord, source_sample: str, record_buffer: dict[int, list[VariantRecord]], transcript_cache: TranscriptCache, window_size_nt: int) -> list[Hit]:
+def process_variant(record: VariantRecord, source_sample: str, record_buffer: dict[int, list[VariantRecord]], transcript_cache: TranscriptCache, window_size_nt: int, stats_collector: StatsCollector) -> list[Hit]:
     if not record.info.get('ANN'):
         raise Exception('No ANN value for variant: {}'.format(record))
 
@@ -119,6 +131,8 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                         if is_passing(fv) and fv.pos != record.pos and fv.samples[source_sample].get('PS') == ps:
                             flanking_variants.append(fv)
 
+        stats_collector.total_discordant_sites += 1
+        had_protein_consequence = False
         for tid in tids:
             aa_seq = transcript_cache.find_transcript_sequence(tid)
             aa_positions1 = ann.get_aa_positions(tid)
@@ -143,9 +157,11 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                 )
 
                 edited_seq = list(aa_seq.upper())
-                changes_made = update_seq(tid, record, ann, aa_positions1, edited_seq, hit)
+                changes_made = update_seq(tid, record, ann, aa_positions1, edited_seq, hit, stats_collector)
                 if not changes_made:
                     continue
+
+                has_protein_consequence = True
 
                 for fv in flanking_variants:
                     # haplotype_index determines whether we are inspecting H1 or H2.
@@ -164,7 +180,7 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                     faa = fa.get_aa_positions(tid)
                     if faa:
                         try:
-                            update_seq(tid, fv, fa, faa, edited_seq, hit)
+                            update_seq(tid, fv, fa, faa, edited_seq, hit, None)
                         except Exception as e:
                             print('ERROR: pos: {}, parent_aa: {}, faa: {}, FV NT: {}'.format(record.pos, aa_positions1, faa, fv.pos))
                             raise e
@@ -179,18 +195,23 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                 hit.seq_region = ''.join(edited_seq[region_start1-1:region_end1])
                 hit.wt_region = aa_seq[region_start1-1:region_end1]
 
+                stats_collector.unique_transcripts.add(hit.tid)
+                stats_collector.unique_gene_names.add(hit.gene_name)
                 ret.append(hit)
+
+            if had_protein_consequence:
+                stats_collector.total_protein_altering += 1
+
     return ret
 
-def process_variant_queue(variants_to_process: list[VariantRecord], source_sample: str, collected_hits: list[Hit], record_map: dict[int, list[VariantRecord]], max_position_to_process: float, transcript_cache: TranscriptCache, window_size_nt: int):
+def process_variant_queue(variants_to_process: list[VariantRecord], source_sample: str, collected_hits: list[Hit], record_map: dict[int, list[VariantRecord]], max_position_to_process: float, transcript_cache: TranscriptCache, window_size_nt: int, stats_collector: StatsCollector):
     return_variants = []
     for variant in variants_to_process:
         if variant.pos < max_position_to_process:
-            collected_hits.extend(process_variant(variant, source_sample, record_map, transcript_cache, window_size_nt=window_size_nt))
+            collected_hits.extend(process_variant(variant, source_sample, record_map, transcript_cache, window_size_nt=window_size_nt, stats_collector=stats_collector))
         else:
             return_variants.append(variant)
 
-    #print(f'After processing: {len(return_variants)}, collected_hits: {len(collected_hits)}')
     return return_variants
 
 def is_passing(record):
@@ -226,7 +247,6 @@ def get_unique_alleles(record, source_sample):
 
     return set(gts)
 
-
 def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_cache: TranscriptCache, aa_flank_window: int = 10, max_records_to_process = -1) -> list[Hit]:
     print('Iterating variants')
     with pysam.VariantFile(vcf_file) as vcf_in:
@@ -243,23 +263,24 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
         # Convert AA -> NT, with extra:
         buffer_window = aa_flank_window * 4
         nt_flank_window = aa_flank_window * 3
-        n_processed = 0
+
         record_map = {}
         variants_to_process = []
         collected_hits = []
         current_chrom = None
-        for record in vcf_in:
-        #for record in vcf_in.fetch("1", 914100, 10355805):
-            n_processed+=1
 
-            if n_processed % 20000 == 0:
-                print('Processed {} variants, # hits: {}'.format(n_processed, len(collected_hits)))
+        stats_collector = StatsCollector()
+        for record in vcf_in:
+            stats_collector.total_sites_inspected += 1
+
+            if stats_collector.total_sites_inspected % 10000 == 0:
+                print('Processed {} variants, # hits: {}'.format(stats_collector.total_sites_inspected, len(collected_hits)))
 
             # Always process queue when switching contigs:
             if current_chrom is not None and record.chrom != current_chrom:
                 print(f'Chromosome change: {current_chrom} -> {record.chrom}')
                 if variants_to_process:
-                    map(lambda x: collected_hits.extend(process_variant(x, source_sample, record_map, transcript_cache, window_size_nt=nt_flank_window)), variants_to_process)
+                    map(lambda x: collected_hits.extend(process_variant(x, source_sample, record_map, transcript_cache, window_size_nt=nt_flank_window, stats_collector=stats_collector)), variants_to_process)
                     variants_to_process.clear()
                 record_map.clear()
 
@@ -274,17 +295,18 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
                 variants_to_process.append(record)
 
             max_position_to_process = record.pos - buffer_window
-            variants_to_process = process_variant_queue(variants_to_process, source_sample, collected_hits, record_map, max_position_to_process, transcript_cache, window_size_nt=nt_flank_window)
+            variants_to_process = process_variant_queue(variants_to_process, source_sample, collected_hits, record_map, max_position_to_process, transcript_cache, window_size_nt=nt_flank_window, stats_collector=stats_collector)
 
             # Prune the buffer:
             min_position = min(map(lambda x: x.pos, variants_to_process)) - buffer_window if variants_to_process else record.pos - buffer_window
             record_map = {k: v for k, v in record_map.items() if k >= min_position}
 
-            if n_processed == max_records_to_process:
+            if stats_collector.total_sites_inspected == max_records_to_process:
+                print('Reached max_records_to_process, aborting')
                 break
 
         # Process anything left in the queue:
-        process_variant_queue(variants_to_process, source_sample, collected_hits, record_map, math.inf, transcript_cache, window_size_nt=nt_flank_window)
+        process_variant_queue(variants_to_process, source_sample, collected_hits, record_map, math.inf, transcript_cache, window_size_nt=nt_flank_window, stats_collector=stats_collector)
 
         print(f'Total hits: {len(collected_hits)}')
 
@@ -316,5 +338,13 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
                         'REVIEW' if hit.allele_idx > 0 and hit.seq_region == hit.wt_region else '',
                         ';'.join(set(hit.messages))
                     ])
+
+
+        print('Total sites inspected: {}'.format(stats_collector.total_sites_inspected))
+        print('Total sites with unique genotype in sample: {}'.format(stats_collector.total_discordant_sites))
+        print('Total of these that altered protein coding: {}'.format(stats_collector.total_protein_altering))
+        print('# Unique transcripts: {}'.format(len(stats_collector.unique_transcripts)))
+        print('# Unique genes: {}'.format(len(stats_collector.unique_gene_names)))
+
         return collected_hits
 
