@@ -6,7 +6,7 @@ import argcomplete
 from antigenfinder.parse_vcf import process_vcf
 from antigenfinder.prepare_gtf import TranscriptCache
 
-if __name__ == "__main__":
+def build_parser():
     try:
         pkg_version = get_version('antigenfinder')
     except Exception:
@@ -35,7 +35,12 @@ if __name__ == "__main__":
     process_vcf_parser.add_argument('--cache_dir', help='The path where the parsed GTF/FASTA output read or created.', type=str, required=False)
     process_vcf_parser.add_argument('--skip_processing_if_cached', help='An optional flag to skip re-processing. If the GFF DB exists in --cache_dir, it will be re-used, instead of re-processing the GTF, ', action="store_true", default=False, required=False)
 
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     if args.subcommand == 'prepare_gtf':
         tc = TranscriptCache(gff_file = args.gtf_file, fasta_file = args.fasta_file, cache_dir = args.cache_dir, skip_if_exists = args.skip_processing_if_cached)
@@ -51,7 +56,18 @@ if __name__ == "__main__":
                     total += 1
 
                 print('Total written: {}'.format(total))
+                return 0
+
 
     elif args.subcommand == 'process_vcf':
         tc = TranscriptCache(gff_file = args.gtf_file, fasta_file = args.fasta_file, cache_dir = args.cache_dir, skip_if_exists = args.skip_processing_if_cached)
-        results = process_vcf(vcf_file = args.vcf_file, source_sample = args.source_sample, transcript_cache = tc, aa_flank_window = args.aa_flank_window, output_file=args.output_file)
+        process_vcf(vcf_file = args.vcf_file, source_sample = args.source_sample, transcript_cache = tc, aa_flank_window = args.aa_flank_window, output_file=args.output_file)
+        return 0
+
+    else:
+        print('Unknown subcommand: {}'.format(args.subcommand))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
