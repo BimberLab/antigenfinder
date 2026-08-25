@@ -132,7 +132,7 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                             flanking_variants.append(fv)
 
         stats_collector.total_discordant_sites += 1
-        had_protein_consequence = False
+        has_protein_consequence = False
         for tid in tids:
             aa_seq = transcript_cache.find_transcript_sequence(tid)
             aa_positions1 = ann.get_aa_positions(tid)
@@ -199,8 +199,9 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                 stats_collector.unique_gene_names.add(hit.gene_name)
                 ret.append(hit)
 
-            if had_protein_consequence:
-                stats_collector.total_protein_altering += 1
+        # Track outside haplotype loop for each site is counted once:
+        if has_protein_consequence:
+            stats_collector.total_protein_altering += 1
 
     return ret
 

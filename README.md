@@ -12,7 +12,7 @@ antigenfinder expects a VCF with at least two samples. That VCF must be processe
 
 Basic usage requires two steps:
 
-First, you can optionally prepare the FASTA/GTF. This runs the initial steps to parse the CDS from the GTF and can store the resulting file on disk. Doing this will save time if you run the tool multiple times. You can optionally provide '--debug-output', in which case the tool will write a FASTA with the inferred CDS AA sequences for each transcript.
+First, you can optionally prepare the FASTA/GTF. You can also skip this and go directly to the next step. This runs the initial steps to parse the CDS from the GTF and can store the resulting file on disk. Doing this will save time if you run the tool multiple times. You can optionally provide '--debug-output', in which case the tool will write a FASTA with the inferred CDS AA sequences for each transcript.
 ```
 python -m antigenfinder prepare-gtf \
     --gtf-file myGtf.gtf \
