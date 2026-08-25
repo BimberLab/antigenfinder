@@ -17,6 +17,7 @@ class StatsCollector():
     total_discordant_sites: int = 0
     total_protein_altering: int = 0
     total_synonymous_changes: int = 0
+    sites_with_flags: int = 0
     unique_transcripts: set[str] = set()
     unique_gene_names: set[str] = set()
 
@@ -203,6 +204,9 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
 
                 stats_collector.unique_transcripts.add(hit.tid)
                 stats_collector.unique_gene_names.add(hit.gene_name)
+                if hit.messages:
+                    stats_collector.sites_with_flags += 1
+
                 ret.append(hit)
 
         # Track outside haplotype loop for each site is counted once:
@@ -348,6 +352,7 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
 
 
         print('Total sites inspected: {}'.format(stats_collector.total_sites_inspected))
+        print('Total sites flagged with warnings: {}'.format(stats_collector.sites_with_flags))
         print('Total sites with unique genotype in sample: {}'.format(stats_collector.total_discordant_sites))
         print('Total of these that altered protein coding: {}'.format(stats_collector.total_protein_altering))
         print('# Unique transcripts: {}'.format(len(stats_collector.unique_transcripts)))
