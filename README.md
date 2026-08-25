@@ -31,8 +31,7 @@ python -m antigenfinder process_vcf \
     --gtf_file myGtf.gtf \
     --fasta_file myFasta.fasta \
     --cache_dir /path/to/cached_files \
-    --skip_processing_if_cached \
-    --debug_output /optional/output_with_cds.fasta
+    --skip_processing_if_cached
 
 ```
 
