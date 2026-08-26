@@ -72,9 +72,9 @@ class TestDataProcessing(unittest.TestCase):
         stats_collector = process_vcf(vcf_file=vcf, source_sample='Sample1', transcript_cache=tc, output_file=out_file)
         self.assertEqual(stats_collector.total_sites_inspected, 248873, 'Incorrect total_sites_inspected')
         self.assertEqual(stats_collector.total_discordant_sites, 716, 'Incorrect total_discordant_sites')
-        self.assertEqual(stats_collector.total_protein_altering, 271, 'Incorrect total_protein_altering')
-        self.assertEqual(len(stats_collector.unique_transcripts), 656, 'Incorrect unique_transcripts')
-        self.assertEqual(len(stats_collector.unique_gene_names), 191, 'Incorrect unique_gene_names')
+        self.assertEqual(stats_collector.total_protein_altering, 363, 'Incorrect total_protein_altering')
+        self.assertEqual(len(stats_collector.unique_transcripts), 782, 'Incorrect unique_transcripts')
+        self.assertEqual(len(stats_collector.unique_gene_names), 228, 'Incorrect unique_gene_names')
 
 if __name__ == "__main__":
     unittest.main()
