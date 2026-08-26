@@ -1,4 +1,6 @@
 import argparse
+import sys
+import logging
 from importlib.metadata import version as get_version
 
 from antigenfinder.parse_vcf import process_vcf
@@ -70,4 +72,11 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\nProcess interrupted by user.", file=sys.stderr)
+        sys.exit(130)
+    except Exception as e:
+        logging.exception("Error running antigenfinder")
+        sys.exit(1)
