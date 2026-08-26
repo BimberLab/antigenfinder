@@ -286,6 +286,19 @@ class SnpEffAnn:
 
         return ret[0]
 
+    def is_synonymous(self, tid: str) -> bool:
+        idx = 0
+        for ann in self.get_annotations(tid):
+            aa1 = ann.get_ref_aa()
+            aa2 = ann.get_alt_aa()
+
+            if aa1 != aa2:
+                return False
+            else:
+                idx += 1
+
+        return idx > 0
+
     def get_aa_changes(self, tid: str) -> list[str]:
         ret = []
         for ann in self.get_annotations(tid):

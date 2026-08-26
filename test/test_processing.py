@@ -44,6 +44,10 @@ def download_inputs():
 
     return [str(local_genome), str(local_gtf)]
 
+def ensure_vcf_index(vcf):
+    if not os.path.exists(vcf + '.tbi'):
+        print('Making VCF index')
+        pysam.tabix_index(vcf, preset="vcf", force=True)
 
 class TestDataProcessing(unittest.TestCase):
 
@@ -54,7 +58,6 @@ class TestDataProcessing(unittest.TestCase):
 
         self.assertEqual(len(tc.find_transcript_sequence('ENST00000374222.6')), 520)
 
-
     def test_vcf_parsing(self):
         data_dir = pathlib.Path(__file__).parent / "data"
         downloaded_genomes = download_inputs()
@@ -63,9 +66,7 @@ class TestDataProcessing(unittest.TestCase):
         tc = TranscriptCache(gff_file=downloaded_genomes[1], fasta_file=downloaded_genomes[0], cache_dir=cache_dir)
 
         vcf = str(data_dir / 'test.vcf.gz')
-        if not os.path.exists(vcf + '.tbi'):
-            print('Making VCF index')
-            pysam.tabix_index(vcf, preset="vcf", force=True)
+        ensure_vcf_index(vcf)
 
         out_file = 'antigenfinder.output.txt'
         stats_collector = process_vcf(vcf_file=vcf, source_sample='Sample1', transcript_cache=tc, output_file=out_file)
