@@ -92,7 +92,8 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
                 continue
             else:
                 ss = aa_seq[max(1, aa_pos0-5):min(len(aa_seq), aa_pos0+5)]
-                raise Exception('Error: incorrect reference AA! expected_ref: {}, found: {}, aa_pos1: {}, cons: {}, aa_len: {}, {}, tid: {}, ref: {}, alt: {}'.format(expected_ref, aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), len(aa_seq), ss, tid, record.ref, record.alts))
+                tracker.messages.append('Error: incorrect reference AA! expected_ref: {}, found: {}, aa_pos1: {}, cons: {}, aa_len: {}, {}, tid: {}, ref: {}, alt: {}'.format(expected_ref, aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), len(aa_seq), ss, tid, record.ref, record.alts))
+                continue
 
         # This should automatically select the correct REF/ALT, based on how the SnpEffRecord was created:
         if not aa_change:
@@ -285,7 +286,7 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
             stats_collector.total_sites_inspected += 1
 
             if stats_collector.total_sites_inspected % 10000 == 0:
-                print('Processed {:,} variants, # hits: {:,}'.format(stats_collector.total_sites_inspected, len(collected_hits)))
+                print('Processed {:,} variants, queue size: {:,}, # hits: {:,}'.format(stats_collector.total_sites_inspected, len(record_map), len(collected_hits)))
 
             # Always process queue when switching contigs:
             if current_chrom is not None and record.chrom != current_chrom:
