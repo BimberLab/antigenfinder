@@ -8,6 +8,10 @@ def aa_to_nt(aa_seq: str) -> str:
     for aa in aa_seq:
         if aa == '-':
             nt.append('---')
+        elif aa == '*':
+            nt.append('***')
+        elif aa == '?':
+            nt.append('???')
         elif aa == 'X':
             nt.append('XXX')
         elif aa == '~':
