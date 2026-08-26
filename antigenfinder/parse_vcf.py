@@ -101,9 +101,13 @@ def update_seq(tid: str, record: VariantRecord, ann: SnpEffAnn, aa_positions1, a
             continue
 
         # Skip synonymous changes:
-        if expected_ref == aa_change:
+        if ann.is_synonymous(tid):
             if stats_collector:
                 stats_collector.total_synonymous_changes += 1
+            continue
+
+        if expected_ref == aa_change and ann.allele_idx != 0:
+            tracker.messages.append('AA is identical to REF, despite allele_idx of: {}. aa_pos1: {}; cons: {}; ref: {}; alt: {}'.format(ann.allele_idx, aa_seq[aa_pos0], aa_pos1, ann.get_aa_cons(tid), record.ref, record.alts))
             continue
 
         tracker.consequences_applied.append('NT-{}: {}'.format(record.pos, ann.get_aa_cons(tid)))
@@ -177,13 +181,13 @@ def process_variant(record: VariantRecord, source_sample: str, record_buffer: di
                     if fgt is None or None in fgt:
                         continue
 
-                    allele_idx = fgt[haplotype_idx]
+                    fv_allele_idx = fgt[haplotype_idx]
 
                     # WT, nothing to do:
-                    if allele_idx == 0:
+                    if fv_allele_idx == 0:
                         continue
 
-                    fa = SnpEffAnn(fv, allele_idx)
+                    fa = SnpEffAnn(fv, fv_allele_idx)
                     faa = fa.get_aa_positions(tid)
                     if faa:
                         try:
@@ -347,7 +351,7 @@ def process_vcf(vcf_file: str, source_sample: str, output_file: str, transcript_
                         hit.wt_region,
                         ';'.join(set(hit.consequences_applied)),
                         utils.aa_to_nt(hit.seq_region),
-                        'REVIEW' if hit.allele_idx > 0 and hit.seq_region == hit.wt_region else '',
+                        'REVIEW' if (hit.allele_idx > 0 and hit.seq_region == hit.wt_region) or (hit.allele_idx == 0 and hit.seq_region.lower() != hit.wt_region.lower()) else '',
                         ';'.join(set(hit.messages))
                     ])
 
